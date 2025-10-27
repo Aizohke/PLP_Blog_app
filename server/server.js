@@ -1,43 +1,71 @@
-// server/server.js
+// server.js - Main server file for the MERN blog application
+
+// Import required modules
 const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
-const fs = require('fs');
-const cors = require('cors');
 
-// Load environment variables
-dotenv.config();
-
-// Connect to DB
-const connectDB = require('./config/db');
-
-// Models for seeding
-const Category = require('./models/Category');
-
-// Routes
+// Import routes
 const postRoutes = require('./routes/posts');
 const categoryRoutes = require('./routes/categories');
 const authRoutes = require('./routes/auth');
 
+// Load environment variables
+dotenv.config();
+
+// Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('📁 Created uploads directory');
+// MongoDB Connection - Handle serverless environment
+let cachedDb = null;
+
+async function connectToDatabase() {
+  if (cachedDb) {
+    console.log('Using cached database connection');
+    return cachedDb;
+  }
+
+  try {
+    const connection = await mongoose.connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    
+    cachedDb = connection;
+    console.log('✅ Connected to MongoDB');
+    return connection;
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error);
+    throw error;
+  }
 }
 
+// Connect to database immediately
+connectToDatabase();
+
+// CORS configuration
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'https://your-frontend.vercel.app', // Update this with your actual frontend URL
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
+
 // Middleware
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve uploaded files
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Log requests in development
+// Log requests in development mode
 if (process.env.NODE_ENV === 'development') {
   app.use((req, res, next) => {
     console.log(`${req.method} ${req.url}`);
@@ -52,14 +80,23 @@ app.use('/api/auth', authRoutes);
 
 // Root route
 app.get('/', (req, res) => {
-  res.json({
+  res.json({ 
     message: 'MERN Blog API is running',
     version: '1.0.0',
     endpoints: {
       auth: '/api/auth',
       posts: '/api/posts',
-      categories: '/api/categories',
-    },
+      categories: '/api/categories'
+    }
+  });
+});
+
+// Health check route
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -67,101 +104,26 @@ app.get('/', (req, res) => {
 app.use((req, res, next) => {
   res.status(404).json({
     success: false,
-    error: 'Route not found',
+    error: 'Route not found'
   });
 });
 
-// Error handler
+// Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack || err);
+  console.error('Error:', err);
   res.status(err.statusCode || 500).json({
     success: false,
     error: err.message || 'Server Error',
   });
 });
 
-// ==========================================
-// 🧩 Seed predefined categories (frontend match)
-// ==========================================
-const predefinedCategories = [
-  { name: 'Technology', slug: 'Technology' },
-  { name: 'Engineering', slug: 'engineering' },
-  { name: 'news', slug: 'news' },
-  { name: 'Innovation', slug: 'innovation' },
-  { name: 'Education', slug: 'education' },
-  { name: 'Lifestyle', slug: 'lifestyle' },
-];
-
-const seedCategoriesIfMissing = async () => {
-  try {
-    for (const cat of predefinedCategories) {
-      const exists = await Category.findOne({ slug: cat.slug });
-      if (!exists) {
-        await Category.create(cat);
-        console.log(`🟢 Seeded category: ${cat.name}`);
-      }
-    }
-  } catch (err) {
-    console.error('Error seeding categories:', err.message || err);
-  }
-};
-
-// Start server after DB connection and seeding
-const start = async () => {
-  try {
-    await connectDB();
-    await seedCategoriesIfMissing();
-
-    app.listen(PORT, () => {
-      console.log('✅ Connected to MongoDB');
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📡 API available at http://localhost:${PORT}/api`);
-    });
-  } catch (err) {
-    console.error('❌ Failed to start server:', err.message || err);
-    process.exit(1);
-  }
-};
-
-start();
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  console.error('❌ Unhandled Promise Rejection:', err);
-  process.exit(1);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('👋 SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
-
-// For Vercel serverless deployment
-if (process.env.VERCEL) {
-  module.exports = app;
-} else {
-  // Connect to MongoDB and start server (for local development)
-  mongoose
-    .connect(process.env.MONGODB_URI)
-    .then(() => {
-      console.log("✅ Connected to MongoDB");
-      app.listen(PORT, () => {
-        console.log(`🚀 Server running on port ${PORT}`);
-        console.log(`📡 API available at http://localhost:${PORT}/api`);
-      });
-    })
-    .catch((err) => {
-      console.error("❌ Failed to connect to MongoDB", err);
-      process.exit(1);
-    });
-}
-
-// Always connect to MongoDB for serverless
-if (process.env.VERCEL) {
-  mongoose.connect(process.env.MONGODB_URI).catch((err) => {
-    console.error("MongoDB connection error:", err);
+// For local development
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📡 API available at http://localhost:${PORT}/api`);
   });
 }
 
+// Export for Vercel serverless
 module.exports = app;
