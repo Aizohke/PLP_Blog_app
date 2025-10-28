@@ -1,147 +1,153 @@
+// api.js — Centralized API Service for Backend Communication
+import axios from "axios";
 
-// api.js - API service for making requests to the backend
+// ===============================
+// ⚙️  Axios Instance Configuration
+// ===============================
+const baseURL =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
 
-import axios from 'axios';
-
-// Create axios instance with base URL
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: `${baseURL}/api`,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
+  timeout: 15000, // 15s timeout for slow networks
+  withCredentials: false, // set true only if backend uses cookies
 });
 
-// Add request interceptor for authentication
+// ===============================
+// 🔑 Request Interceptor (Attach Token)
+// ===============================
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    const token = localStorage.getItem("token");
+    if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Add response interceptor for error handling
+// ===============================
+// ⚠️ Response Interceptor (Global Error Handling)
+// ===============================
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle authentication errors
-    if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+    const { response } = error;
+
+    if (!response) {
+      console.error("Network error or server unreachable.");
+      alert("Network error — please check your internet connection.");
     }
+
+    // Unauthorized
+    if (response?.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      window.location.href = "/login";
+    }
+
+    // Generic API errors
+    if (response?.status >= 400) {
+      console.error(`API Error [${response.status}]:`, response.data?.message);
+    }
+
     return Promise.reject(error);
   }
 );
 
-// Post API services
+// ===============================
+// 📮 Post Service
+// ===============================
 export const postService = {
-  // Get all posts with optional pagination and filters
-  getAllPosts: async (page = 1, limit = 10, category = null) => {
-    let url = `/posts?page=${page}&limit=${limit}`;
-    if (category) {
-      url += `&category=${category}`;
-    }
-    const response = await api.get(url);
-    return response.data;
+  async getAllPosts(page = 1, limit = 10, category) {
+    const query = new URLSearchParams({ page, limit });
+    if (category) query.append("category", category);
+
+    const { data } = await api.get(`/posts?${query.toString()}`);
+    return data;
   },
 
-  // Get a single post by ID or slug
-  getPost: async (idOrSlug) => {
-    const response = await api.get(`/posts/${idOrSlug}`);
-    return response.data;
+  async getPost(idOrSlug) {
+    const { data } = await api.get(`/posts/${idOrSlug}`);
+    return data;
   },
 
-  // Create a new post
-  createPost: async (postData) => {
-    const response = await api.post('/posts', postData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+  async createPost(postData) {
+    const { data } = await api.post("/posts", postData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
-    return response.data;
+    return data;
   },
 
-  // Update an existing post
-  updatePost: async (id, postData) => {
-    const response = await api.put(`/posts/${id}`, postData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+  async updatePost(id, postData) {
+    const { data } = await api.put(`/posts/${id}`, postData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
-    return response.data;
+    return data;
   },
 
-  // Delete a post
-  deletePost: async (id) => {
-    const response = await api.delete(`/posts/${id}`);
-    return response.data;
+  async deletePost(id) {
+    const { data } = await api.delete(`/posts/${id}`);
+    return data;
   },
 
-  // Add a comment to a post
-  addComment: async (postId, commentData) => {
-    const response = await api.post(`/posts/${postId}/comments`, commentData);
-    return response.data;
+  async addComment(postId, commentData) {
+    const { data } = await api.post(`/posts/${postId}/comments`, commentData);
+    return data;
   },
 
-  // Search posts
-  searchPosts: async (query) => {
-    const response = await api.get(`/posts/search?q=${query}`);
-    return response.data;
+  async searchPosts(query) {
+    const { data } = await api.get(`/posts/search?q=${encodeURIComponent(query)}`);
+    return data;
   },
 };
 
-// Category API services
+// ===============================
+// 🗂 Category Service
+// ===============================
 export const categoryService = {
-  // Get all categories
-  getAllCategories: async () => {
-    const response = await api.get('/categories');
-    return response.data;
+  async getAllCategories() {
+    const { data } = await api.get("/categories");
+    return data;
   },
 
-  // Create a new category
-  createCategory: async (categoryData) => {
-    const response = await api.post('/categories', categoryData);
-    return response.data;
+  async createCategory(categoryData) {
+    const { data } = await api.post("/categories", categoryData);
+    return data;
   },
 };
 
-// Auth API services
+// ===============================
+// 👤 Auth Service
+// ===============================
 export const authService = {
-  // Register a new user
-  register: async (userData) => {
-    const response = await api.post('/auth/register', userData);
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+  async register(userData) {
+    const { data } = await api.post("/auth/register", userData);
+    if (data.token) {
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
     }
-    return response.data;
+    return data;
   },
 
-  // Login user
-  login: async (credentials) => {
-    const response = await api.post('/auth/login', credentials);
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
+  async login(credentials) {
+    const { data } = await api.post("/auth/login", credentials);
+    if (data.token) {
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
     }
-    return response.data;
+    return data;
   },
 
-  // Logout user
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  logout() {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
   },
 
-  // Get current user
-  getCurrentUser: () => {
-    const user = localStorage.getItem('user');
+  getCurrentUser() {
+    const user = localStorage.getItem("user");
     return user ? JSON.parse(user) : null;
   },
 };
