@@ -63,7 +63,7 @@ const corsOptions = {
   origin: [
     'http://localhost:3000',
     'http://localhost:4173',
-    'https://your-frontend.vercel.app', // UPDATE THIS with your actual frontend URL
+    'https://plp-blog-app-yi4o.vercel.app/', // UPDATE THIS with your actual frontend URL
   ],
   credentials: true,
   optionsSuccessStatus: 200,
